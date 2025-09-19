@@ -3,4 +3,4 @@ docxtpl
 python-docx
 streamlit
 openpyxl
-reportlab
+requests
