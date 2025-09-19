@@ -5,8 +5,7 @@ from datetime import datetime
 import streamlit as st
 import zipfile
 import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from docx2pdf import convert   # ✅ Only works on Windows/Mac with Word
 
 TEMPLATE_DOC = "sample.docx"
 OUT_DIR = "Result"
@@ -61,23 +60,15 @@ if uploaded_file is not None:
         doc.save(word_path)
         generated_word.append(word_path)
 
-        # Simple PDF generation (ReportLab)
+        # PDF conversion (Word → PDF)
         pdf_path = os.path.join(OUT_DIR, f"WCR_{wo}.pdf")
-        story = []
-        styles = getSampleStyleSheet()
-        story.append(Paragraph(f"Work Order No: {context.get('wo_no','')}", styles['Title']))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph(f"WO Description: {context.get('wo_des','')}", styles['Normal']))
-        story.append(Paragraph(f"Site: {context.get('Site_Name','')}", styles['Normal']))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph("Work Status:", styles['Heading2']))
-        story.append(Paragraph(f"1. {context.get('Line_1','')} – {context.get('Line_1_Workstatus','')}", styles['Normal']))
-        story.append(Paragraph(f"2. {context.get('Line_2','')} – {context.get('Line_2_Workstatus','')}", styles['Normal']))
-        pdf = SimpleDocTemplate(pdf_path)
-        pdf.build(story)
-        generated_pdf.append(pdf_path)
+        try:
+            convert(word_path, pdf_path)   # uses MS Word in background
+            generated_pdf.append(pdf_path)
+        except Exception as e:
+            st.error(f"PDF conversion failed for {word_path}: {e}")
 
-    # Zip Word
+    # ---- ZIP Word ----
     zip_word = io.BytesIO()
     with zipfile.ZipFile(zip_word, "w") as zipf:
         for file in generated_word:
@@ -85,10 +76,11 @@ if uploaded_file is not None:
     zip_word.seek(0)
     st.download_button("⬇️ Download All WCR Files (Word ZIP)", zip_word, "WCR_Word_Files.zip", "application/zip")
 
-    # Zip PDF
-    zip_pdf = io.BytesIO()
-    with zipfile.ZipFile(zip_pdf, "w") as zipf:
-        for file in generated_pdf:
-            zipf.write(file, arcname=os.path.basename(file))
-    zip_pdf.seek(0)
-    st.download_button("⬇️ Download All WCR Files (PDF ZIP)", zip_pdf, "WCR_PDF_Files.zip", "application/zip")
+    # ---- ZIP PDF ----
+    if generated_pdf:
+        zip_pdf = io.BytesIO()
+        with zipfile.ZipFile(zip_pdf, "w") as zipf:
+            for file in generated_pdf:
+                zipf.write(file, arcname=os.path.basename(file))
+        zip_pdf.seek(0)
+        st.download_button("⬇️ Download All WCR Files (PDF ZIP)", zip_pdf, "WCR_PDF_Files.zip", "application/zip")
