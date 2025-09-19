@@ -6,15 +6,17 @@ import streamlit as st
 import zipfile
 import io
 from pathlib import Path
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from docx import Document
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 
 # ---- Constants ----
-TEMPLATE_DOC = "sample.docx"   # keep template in repo
+TEMPLATE_DOC = "sample.docx"   # Template must be in repo
 OUT_DIR = "Result"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 def _safe(x):
+    """Format values safely"""
     if pd.isna(x) or x == "":
         return ""
     if isinstance(x, (datetime, pd.Timestamp)):
@@ -26,7 +28,7 @@ def _safe(x):
         return str(x).strip()
 
 # ----------------- Streamlit UI -----------------
-st.title("📑 Automated WCR Generator")
+st.title("📑 Automated WCR Generator & Converter")
 
 # ----------------- Step 1 -----------------
 st.subheader("Step 1: Generate Word Files from Excel")
@@ -37,6 +39,7 @@ if uploaded_file is not None:
     df = pd.read_excel(uploaded_file, engine="openpyxl")
     df.columns = df.columns.str.strip()
 
+    # Rename for consistency
     rename_map = {
         "wo no": "wo_no", "wo_no": "wo_no",
         "wo date": "wo_date", "wo_date": "wo_date",
@@ -100,9 +103,10 @@ st.subheader("Step 2: Convert Word ZIP to PDF ZIP")
 uploaded_zip = st.file_uploader("Upload WCR Word ZIP", type=["zip"], key="word_zip_upload")
 
 if uploaded_zip is not None:
-    # Extract uploaded ZIP
     extract_dir = Path("TempExtract")
     extract_dir.mkdir(exist_ok=True)
+
+    # Extract uploaded ZIP
     with zipfile.ZipFile(uploaded_zip, "r") as zip_ref:
         zip_ref.extractall(extract_dir)
 
@@ -110,28 +114,45 @@ if uploaded_zip is not None:
     for docx_file in extract_dir.glob("*.docx"):
         pdf_path = extract_dir / (docx_file.stem + ".pdf")
 
-        # Create PDF with same context data (basic version)
+        # Read Word content
+        doc = Document(docx_file)
         story = []
         styles = getSampleStyleSheet()
-        story.append(Paragraph(f"Generated PDF for: {docx_file.stem}", styles['Title']))
+        story.append(Paragraph(f"Converted: {docx_file.name}", styles['Title']))
         story.append(Spacer(1, 12))
-        story.append(Paragraph("⚠️ Note: Layout may differ from Word template", styles['Normal']))
+
+        # Paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                story.append(Paragraph(para.text, styles['Normal']))
+                story.append(Spacer(1, 6))
+
+        # Tables
+        for table in doc.tables:
+            data = []
+            for row in table.rows:
+                data.append([cell.text.strip() for cell in row.cells])
+            if data:
+                story.append(Table(data))
+                story.append(Spacer(1, 12))
 
         pdf = SimpleDocTemplate(str(pdf_path))
         pdf.build(story)
 
         pdf_files.append(pdf_path)
 
-    # Zip PDFs
-    zip_pdf = io.BytesIO()
-    with zipfile.ZipFile(zip_pdf, "w") as zipf:
-        for file in pdf_files:
-            zipf.write(file, arcname=os.path.basename(file))
-    zip_pdf.seek(0)
+    if pdf_files:
+        # Create ZIP of PDFs
+        zip_pdf = io.BytesIO()
+        with zipfile.ZipFile(zip_pdf, "w") as zipf:
+            for file in pdf_files:
+                zipf.write(file, arcname=os.path.basename(file))
+        zip_pdf.seek(0)
 
-    st.download_button(
-        "⬇️ Download All WCR Files (PDF ZIP)",
-        data=zip_pdf,
-        file_name="WCR_PDF_Files.zip",
-        mime="application/zip"
-    )
+        st.success(f"✅ Converted {len(pdf_files)} Word files to PDF (layout simplified)")
+        st.download_button(
+            "⬇️ Download All PDFs (ZIP)",
+            data=zip_pdf,
+            file_name="WCR_PDF_Files.zip",
+            mime="application/zip"
+        )
