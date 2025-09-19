@@ -2,4 +2,4 @@ pandas
 docxtpl
 python-docx
 streamlit
-reportlab
+openpyxl
